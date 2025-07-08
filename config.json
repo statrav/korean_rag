@@ -1,0 +1,27 @@
+{
+  "embed_model": "/raid/models/embed-model/dragonkue_BGE-m3-ko",
+  "generate_model": "/raid/models/alibaba-qwen/Qwen2.5-7B-Instruct",
+
+  "chunk_size": 500,
+  "chunk_overlap": 50,
+  "retriever_top_k": 3,
+  "retriever_type": "DenseRetriever",
+
+  "gpu_memory_utilization": 0.8,
+  "tensor_parallel_size": 1,
+
+  "max_new_tokens": 1024,
+  "temperature": 0.6,
+  "top_p": 0.95,
+  "top_k": 40,
+  "repetition_penalty": 1.18,
+
+  "data_dir": "data",
+  "train_file": "korean_language_rag_V1.0_train.json",
+  "dev_file": "korean_language_rag_V1.0_dev.json",
+  "test_file": "korean_language_rag_V1.0_test.json",
+
+  "split": "dev",
+
+  "gpu_id": 1
+}

@@ -1,0 +1,7 @@
+transformers==4.44.2
+sentence-transformers==4.1.0
+faiss-gpu-cu12==1.11.0
+langchain==0.3.26
+langchain-community==0.3.26
+langchain-text-splitters==0.3.8
+vllm==0.9.1
