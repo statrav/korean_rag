@@ -3,6 +3,7 @@ from langchain_community.embeddings import HuggingFaceEmbeddings
 from utils.load_data import load_jsonl, build_documents, load_config
 from models.retrieve import RetrieverManager
 from models.generate import Generator
+from models.generate_api import GeneratorAPI
 
 import json
 import os
@@ -54,8 +55,14 @@ if __name__ == "__main__":
     retriever = retriever_manager.retriever
     print("# Retriever 생성 성공")
 
-    generator = Generator(config)
-    print("# Generator 생성 성공")
+    # Generator 타입에 따라 선택
+    generator_type = config.get("generator_type", "vllm")
+    if generator_type == "api":
+        generator = GeneratorAPI(config)
+        print("# GeneratorAPI (Transformers) 생성 성공")
+    else:
+        generator = Generator(config)
+        print("# Generator (vLLM) 생성 성공")
     
     print("# 평가 시작")
     eval_data = load_jsonl(EVAL_FILE)
@@ -66,6 +73,7 @@ if __name__ == "__main__":
         question_type = item["input"].get("question_type", "")
         context = "\n".join([doc.page_content for doc in retriever.retrieve(query, config["retriever_top_k"])] )
         preds = generator.generate(query, context, question_type)
+        # 두 Generator 모두 동일한 인터페이스로 사용 가능
         answer = preds[0].outputs[0].text.strip()
         golden_answer = item.get("output", {}).get("answer", "").strip()
         # 평가용 저장

@@ -1,8 +1,10 @@
 {
   "embed_model": "/raid/models/embed-model/dragonkue_BGE-m3-ko",
   "generate_model": "/raid/models/alibaba-qwen/Qwen2.5-7B-Instruct",
+  "api_model_name": "skt/A.X-4.0-Light",
+  "generator_type": "api",
 
-  "chunk_size": 500,
+  "chunk_size": 256,
   "chunk_overlap": 50,
   "retriever_top_k": 3,
   "retriever_type": "DenseRetriever",
@@ -25,3 +27,4 @@
 
   "gpu_id": 1
 }
+

@@ -5,3 +5,4 @@ langchain==0.3.26
 langchain-community==0.3.26
 langchain-text-splitters==0.3.8
 vllm==0.9.1
+accelerate==1.8.1

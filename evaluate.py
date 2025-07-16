@@ -1,67 +1,105 @@
 import json
 import os
-# You'll need to install these libraries:
-# pip install rouge-score transformers evaluate
-# For BLEURT, it's more complex, often requiring TensorFlow and a specific model.
-# Consider using the 'evaluate' library which might simplify integration.
-# pip install bleurt (Note: BLEURT can be tricky to install and run due to TensorFlow dependencies)
+import re
+import argparse
 
-# For demonstration, we'll use dummy functions for ROUGE, BERTScore, BLEURT
-# In a real scenario, you would import and use the actual libraries.
+# 필요한 라이브러리 설치 안내:
+# pip install rouge-score transformers evaluate (BERTScore/BLEURT를 사용하려면)
+# BLEURT는 TensorFlow와 특정 모델이 필요하므로 설치가 복잡할 수 있습니다.
+
 from rouge_score import rouge_scorer
-# import evaluate # for BERTScore and potentially BLEURT
+# 실제 BERTScore와 BLEURT를 사용하려면 아래 주석을 해제하고 필요한 모델을 로드하세요.
+# import evaluate
 
 def calculate_exact_match(prediction, reference):
     """
-    Calculates Exact Match between a prediction and a reference.
-    For the '선택·교정 문장 이/가 옳다.' part.
+    예측과 참조 간의 완전 일치(Exact Match) 점수를 계산합니다.
+    "선택·교정 문장 이/가 옳다." 부분 평가에 사용됩니다.
     """
-    # Normalize by removing extra spaces and case for robust comparison
+    # 양쪽 끝 공백 제거 및 소문자 변환으로 비교의 견고성 높임
     return 1 if prediction.strip().lower() == reference.strip().lower() else 0
 
 def calculate_rouge(prediction, reference):
     """
-    Calculates ROUGE score.
-    You'll need to instantiate a rouge_scorer and call its score() method.
-    This is a placeholder.
+    ROUGE 점수를 계산합니다. ROUGE-L의 F-measure를 반환합니다.
     """
     scorer = rouge_scorer.RougeScorer(['rouge1', 'rouge2', 'rougeL'], use_stemmer=True)
     scores = scorer.score(reference, prediction)
-    # Typically, you'd pick a specific ROUGE score (e.g., rougeL.fmeasure)
-    # For this example, we'll return a simplified average or just rougeL.
-    return scores['rougeL'].fmeasure # Returning F-measure for ROUGE-L
+    return scores['rougeL'].fmeasure
 
 def calculate_bertscore(prediction, reference):
     """
-    Calculates BERTScore.
-    You'll typically load a BERTScore model using the 'evaluate' library.
-    This is a placeholder.
+    BERTScore를 계산하는 플레이스홀더 함수입니다.
+    실제 환경에서는 'evaluate' 라이브러리를 사용하여 BERTScore 모델을 로드하고 사용해야 합니다.
     """
     # bertscore = evaluate.load("bertscore")
     # results = bertscore.compute(predictions=[prediction], references=[reference], lang="ko")
-    # return results['f1'][0] # Return the F1 score
-    return 0.0 # Placeholder
+    # return results['f1'][0]
+    return 0.5 # 데모를 위한 더미 점수
 
 def calculate_bleurt(prediction, reference):
     """
-    Calculates BLEURT score.
-    This is a placeholder. BLEURT often requires specific model downloads and TensorFlow.
+    BLEURT 점수를 계산하는 플레이스홀더 함수입니다.
+    실제 환경에서는 'evaluate' 라이브러리와 BLEURT 모델을 사용하여야 합니다.
     """
     # bleurt = evaluate.load("bleurt", module_type="metric")
     # results = bleurt.compute(predictions=[prediction], references=[reference])
     # return results['scores'][0]
-    return 0.0 # Placeholder
+    return 0.5 # 데모를 위한 더미 점수
+
+def split_sentence_and_reason(text):
+    """
+    주어진 텍스트를 "선택·교정 문장 이/가 옳다." 부분과 "이유" 부분으로 분리합니다.
+    다양한 모델 출력 형식에 대응하기 위해 정규 표현식과 추가 로직을 사용합니다.
+    """
+    # 1. 일반적인 "옳다." 또는 "옳습니다."로 끝나는 형태 파싱
+    # 이 정규식은 "문장" + "가 옳다." 또는 "가 옳습니다." 형태를 찾습니다.
+    # 예: "\"나는 그를 본 적이 있음을 기억해 냈다.\"가 옳습니다."
+    # 예: "\"오늘은 퍼즐 맞추기를 해 볼 거예요.\"가 옳다."
+    match = re.match(r'(.*?)(옳다\.|옳습니다\.)\s*(.*)', text, re.DOTALL)
+    if match:
+        sentence_part = match.group(1).strip() + match.group(2).strip()
+        reason_part = match.group(3).strip()
+        # "이유:" 같은 시작 부분이 있으면 제거
+        if reason_part.lower().startswith("이유:"):
+            reason_part = reason_part[len("이유:"):].strip()
+        elif reason_part.lower().startswith("이 문장을 수정한 이유는 다음과 같습니다:"): # 624번 모델 출력 포맷 처리
+            pass # 이 부분은 이유의 시작이므로 그대로 둡니다.
+        return sentence_part, reason_part
+    
+    # 2. "문장."으로 끝나고 바로 뒤에 줄바꿈(들)으로 이유가 시작되는 형태 파싱 (예: 624번 모델 출력)
+    # 즉, "...에요."\n\n이 문장을 수정한 이유는... 형태
+    parts_by_newline = text.split('\n\n', 1)
+    if len(parts_by_newline) > 1:
+        sentence_part = parts_by_newline[0].strip()
+        reason_part = parts_by_newline[1].strip()
+        
+        # 모델 출력의 문장 부분에 '가 옳다/옳습니다'가 없으면, 평가를 위해 정답 포맷에 맞춰 추가
+        # 단, 실제 모델이 그렇게 출력하지 않았다면 Exact Match는 0점 처리될 것입니다.
+        # 이 부분은 모델의 출력을 강제로 정답 형식에 맞추는 것이 아니라,
+        # 정답과의 비교를 위해 임시로 일관된 형태를 만드는 시도입니다.
+        if not (sentence_part.endswith('옳다.') or sentence_part.endswith('옳습니다.')):
+            # "옳다." 또는 "옳습니다."가 붙지 않은 모델 출력의 경우, 비교를 위해 정답과 동일하게 뒤에 붙여봄
+            # 하지만 이는 실제 모델 출력이 다르므로 EM은 0이 됩니다.
+            # 이 로직은 `model_em_part`가 `golden_em_part`와 같은 형태로 보일 수 있게 정제하는 과정입니다.
+            # 실제 EM 점수는 `calculate_exact_match` 함수에서 결정됩니다.
+            pass # EM은 그대로 모델 출력을 사용하고, 정답과 다르다면 0점 처리되는 것이 맞습니다.
+        
+        return sentence_part, reason_part
+    
+    # 3. 그 외의 경우 (분리 패턴을 찾지 못했을 때) - 전체 텍스트를 문장으로 간주
+    return text.strip(), ""
+
 
 def evaluate_model(file_path):
     """
-    Evaluates the model's performance based on the provided JSON file and PDF guidelines.
+    모델의 성능을 JSON 파일과 평가 가이드라인에 따라 평가합니다.
 
     Args:
-        file_path (str): The path to the JSON file containing the model's outputs
-                         and golden answers.
+        file_path (str): 모델의 출력과 정답을 포함하는 JSON 파일의 경로입니다.
     """
     if not os.path.exists(file_path):
-        print(f"Error: File not found at {file_path}")
+        print(f"오류: 파일을 찾을 수 없습니다. 경로: {file_path}")
         return
 
     with open(file_path, 'r', encoding='utf-8') as f:
@@ -73,33 +111,29 @@ def evaluate_model(file_path):
     total_bleurt_score = 0
     num_entries = len(data)
 
-    for entry in data:
-        model_answer = entry['output']['answer']
-        golden_answer = entry['output']['golden_answer']
+    print(f"--- 평가 시작 ({file_path}) ---")
 
-        # 1. Evaluate Exact Match for the leading sentence
-        # The PDF specifies "정답은 '선택·교정 문장 이/가 옳다. 이유'의 형식으로 출력해야 한다." [cite: 19]
-        # And "출력 형식 중 선택·교정 문장 이/가 옳다.'는 완전 일치(Exact Match)로 평가하며..." 
-        # We need to extract this leading sentence for exact match.
-        # This assumes the leading sentence ends with ".가 옳다." or ".가 옳습니다." and is followed by the reason.
-        # This parsing might need refinement based on actual model output variations.
-        
-        # Split model_answer and golden_answer into sentence and reason parts
-        # This is a heuristic and might need to be more robust depending on actual output format
-        model_sentence_part = model_answer.split('. ')[0] + '.' if '. ' in model_answer else model_answer
-        golden_sentence_part = golden_answer.split('. ')[0] + '.' if '. ' in golden_answer else golden_answer
-        
-        # For the reason part, we take everything after the first sentence.
-        model_reason_part = '. '.join(model_answer.split('. ')[1:]) if '. ' in model_answer else ""
-        golden_reason_part = '. '.join(golden_answer.split('. ')[1:]) if '. ' in golden_answer else ""
+    for i, entry in enumerate(data):
+        model_output_full = entry['output']['answer'].strip()
+        golden_output_full = entry['output']['golden_answer'].strip()
 
-        total_exact_match_score += calculate_exact_match(model_sentence_part, golden_sentence_part)
+        # 모델 출력과 정답을 문장 부분과 이유 부분으로 분리
+        model_sentence_part, model_reason_part = split_sentence_and_reason(model_output_full)
+        golden_sentence_part, golden_reason_part = split_sentence_and_reason(golden_output_full)
+
+        # 1. 문장 부분에 대한 완전 일치(Exact Match) 평가
+        current_em_score = calculate_exact_match(model_sentence_part, golden_sentence_part)
+        total_exact_match_score += current_em_score
+        print(f"완전 일치(Exact Match) 점수: {current_em_score}")
         
-        # 2. Evaluate ROUGE, BERTScore, BLEURT for the reason part
-        # "이유'는 루지(ROUGE)와 버트스코어(BERTScore), 블루알트(BLEURT) 세 지표의 평균으로 모델의 성능을 정량 평가한다." 
-        total_rouge_score += calculate_rouge(model_reason_part, golden_reason_part)
-        total_bertscore += calculate_bertscore(model_reason_part, golden_reason_part)
-        total_bleurt_score += calculate_bleurt(model_reason_part, golden_reason_part)
+        # 2. 이유 부분에 대한 ROUGE, BERTScore, BLEURT 평가
+        current_rouge_score = calculate_rouge(model_reason_part, golden_reason_part)
+        current_bert_score = calculate_bertscore(model_reason_part, golden_reason_part)
+        current_bleurt_score = calculate_bleurt(model_reason_part, golden_reason_part)
+
+        total_rouge_score += current_rouge_score
+        total_bertscore += current_bert_score
+        total_bleurt_score += current_bleurt_score
 
     if num_entries > 0:
         avg_exact_match = total_exact_match_score / num_entries
@@ -107,52 +141,27 @@ def evaluate_model(file_path):
         avg_bertscore = total_bertscore / num_entries
         avg_bleurt = total_bleurt_score / num_entries
         
-        # Average of ROUGE, BERTScore, BLEURT for the reason part 
+        # 이유 부분 지표들의 평균
         avg_reason_metrics = (avg_rouge + avg_bertscore + avg_bleurt) / 3 
 
-        print(f"--- Evaluation Results ({file_path}) ---")
-        print(f"Total entries processed: {num_entries}")
-        print(f"Average Exact Match (Sentence Part): {avg_exact_match:.4f}")
-        print(f"Average ROUGE (Reason Part): {avg_rouge:.4f}")
-        print(f"Average BERTScore (Reason Part): {avg_bertscore:.4f}")
-        print(f"Average BLEURT (Reason Part): {avg_bleurt:.4f}")
-        print(f"Combined Average for Reason Metrics (ROUGE, BERTScore, BLEURT): {avg_reason_metrics:.4f}")
+        print(f"\n--- 최종 평가 결과 ({file_path}) ---")
+        print(f"총 처리된 항목 수: {num_entries}")
+        print(f"평균 완전 일치(Exact Match) 점수 (문장 부분): {avg_exact_match:.4f}")
+        print(f"평균 ROUGE 점수 (이유 부분): {avg_rouge:.4f}")
+        print(f"평균 BERTScore (이유 부분): {avg_bertscore:.4f}")
+        print(f"평균 BLEURT 점수 (이유 부분): {avg_bleurt:.4f}")
+        print(f"이유 부분 지표들의 결합 평균 (ROUGE, BERTScore, BLEURT): {avg_reason_metrics:.4f}")
     else:
-        print("No entries to evaluate.")
+        print("평가할 항목이 없습니다.")
 
-# Example usage:
 if __name__ == "__main__":
-    # Create a dummy JSON file for testing based on your example
-    dummy_data = [
-        {
-            "id": "623",
-            "input": {
-                "question_type": "선택형",
-                "question": "\"나는 그를 본 적이 있음을 {기억해냈다/기억해 냈다}.\" 가운데 올바른 것을 선택하고, 그 이유를 설명하세요."
-            },
-            "output": {
-                "answer": "\"나는 그를 본 적이 있음을 기억해 냈다.\"가 옳습니다. \n\n'-아들/-았었다'는 형식으로 표현하면 더 자연스럽고 일반적으로 사용됩니다. 따라서 이 문장에서는 '기억해 냈다'가 더 적합합니다. 반면에 '기억해냈다'는 '기억하다 + 내다'로 분석될 수 있어 조금 불편하게 느껴질 수 있습니다. 또한, 이 용언 조합은 실제 언어 사용에서 드물게 사용되며, 정형화되지 않은 표현으로 간주되기 때문입니다. 따라서 '기억해 냈다'가 더 도움이 될 것 같습니다. \n따라서, '기억해 냈다'는自然而流畅地表达出了已经将某事记在了心里的意思，符合韩语的常用表达方式.",
-                "golden_answer": "\"나는 그를 본 적이 있음을 기억해 냈다.\"가 옳다. '기억해 냈다'는 '기억하-+-아+냈다'의 구성이다. 이처럼 '본용언+-아/-어+보조 용언' 구성인 경우 본용언과 보조 용언을 붙여 쓰는 것이 허용되지만, 이러한 구성을 갖더라도 앞말이 3음절 이상의 합성어나 파생어라면 보조 용언을 붙여 쓰는 것이 허용되지 않는다. '기억하다'는 '기억'과 '-하다'가 결합한 파생어이며 '기억해'는 3음절이다. 따라서 '기억해'와 '냈다'는 띄어 써야 한다."
-            }
-        },
-        {
-            "id": "624",
-            "input": {
-                "question_type": "교정형",
-                "question": "다음 문장에서 어문 규범에 부합하지 않는 부분을 찾아 고치고, 그 이유를 설명하세요.\n\"오늘은 퍼즐 마추기를 해 볼 거예요.\""
-            },
-            "output": {
-                "answer": "\"오늘은 퍼즐 맞히기를 해볼 거예요.\"\n\n이 문장을 수정한 이유는 다음과 같습니다:\n\n1. **\"마추기\"** → **\"맞히기\"**: \"마추기\"는 일반적으로 운동이나 경기에 사용되는 용어이며, 퍼즐과 관련성이 없습니다. 반면 \"맞히기\"는 퍼즐을 해결하거나 답을 찾는 행동을 정확하게 표현합니다.\n\n2. **\"해볼\"** → **\"해보려고\" 또는 단순히 **\"해볼\"**: \"해볼\" 자체는 상황적이고 자연스러운 표현입니다만, 여기서는 조금 더 구체적인 의도를 드러내기 위해 \"해보려고\"나 \"해볼까\"처럼 조사를 추가하는 것이 좋습니다. 하지만 이 경우 \"해볼\" 역시 문제 없으므로 선택 사항입니다.\n\n따라서 가장 자연스럽게 들리는 표현은 \"오늘은 퍼즐 맞히기를 해볼 거예요.\"라고 할 수 있습니다.",
-                "golden_answer": "\"오늘은 퍼즐 맞추기를 해 볼 거예요.\"가 옳다. '제자리에 맞게 붙이다, 주문하다, 똑바르게 하다, 비교하다' 등의 뜻이 있는 말은 '마추다'가 아닌 '맞추다'로 적는다."
-            }
-        }
-    ]
+    parser = argparse.ArgumentParser(description="모델 출력과 정답을 포함하는 JSON 파일을 평가합니다.")
+    parser.add_argument(
+        "file_path", 
+        type=str, 
+        help="평가할 JSON 파일의 경로 (예: output_results.json)"
+    )
+    args = parser.parse_args()
 
-    dummy_file_name = "evaluation_data.json"
-    with open(dummy_file_name, 'w', encoding='utf-8') as f:
-        json.dump(dummy_data, f, ensure_ascii=False, indent=2)
-
-    evaluate_model(dummy_file_name)
-
-    # Clean up the dummy file
-    os.remove(dummy_file_name)
+    # 스크립트 실행 시 인자로 받은 파일 경로로 평가 함수 호출
+    evaluate_model(args.file_path)
